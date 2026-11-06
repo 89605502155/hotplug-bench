@@ -1,0 +1,8 @@
+build/
+figures_out/
+results/*.log
+results/exp*/
+__pycache__/
+*.pyc
+*.tiff
+.venv/

@@ -1,0 +1,33 @@
+#!/bin/busybox sh
+# PID 1 of the experiment guest: mounts pseudo file systems, optionally loads
+# virtio_mem, then serves shell commands from the host over /dev/hvc0.
+#
+# Protocol (one command per line):  <id> <shell command...>
+# Reply: command output, then a line "@@END <id> <exit code>".
+
+/bin/busybox --install -s /bin
+mkdir -p /proc /sys /dev
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /tmp /mnt/t
+mount -t tmpfs -o size=90% tmpfs /mnt/t
+
+# virtio_mem is loaded only when hp.virtio_mem=1 is given.
+# Module parameters are passed as hp.vm.<name>=<value> on the command line.
+VMEM_ARGS=$(tr ' ' '\n' < /proc/cmdline | sed -n 's/^hp\.vm\.//p' | tr '\n' ' ')
+if grep -q 'hp.virtio_mem=1' /proc/cmdline && ! [ -d /sys/module/virtio_mem ]; then
+	insmod /lib/virtio_mem.ko $VMEM_ARGS
+fi
+
+echo "GUEST-AGENT-UP" > /dev/ttyS0
+
+stty -F /dev/hvc0 raw -echo
+exec 3<>/dev/hvc0
+echo "@@HELLO" >&3
+while read -r id cmd <&3; do
+	out=$(sh -c "$cmd" 2>&1)
+	rc=$?
+	printf '%s\n@@END %s %d\n' "$out" "$id" "$rc" >&3
+done
+poweroff -f
